@@ -88,8 +88,12 @@ func New(ctx context.Context, b *backendclient.BackendClient) (*Client, error) {
 	return &client, nil
 }
 
-func (c Client) Kind() models.CloudProvider {
+func (c *Client) Kind() models.CloudProvider {
 	return models.GCP
+}
+
+func (c *Client) UUID() *string {
+	return &c.uuid
 }
 
 func (c *Client) Estimate(ctx context.Context, stats models.AssetScanStats, asset *models.Asset, assetScanTemplate *models.AssetScanTemplate) (*models.Estimation, error) {

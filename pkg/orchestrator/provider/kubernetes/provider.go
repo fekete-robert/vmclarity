@@ -80,6 +80,10 @@ func (p *Provider) Kind() models.CloudProvider {
 	return models.Kubernetes
 }
 
+func (p *Provider) UUID() *string {
+	return &p.uuid
+}
+
 func (p *Provider) Estimate(ctx context.Context, stats models.AssetScanStats, asset *models.Asset, assetScanTemplate *models.AssetScanTemplate) (*models.Estimation, error) {
 	return &models.Estimation{}, provider.FatalErrorf("Not Implemented")
 }

@@ -78,6 +78,10 @@ func (c *Client) Kind() models.CloudProvider {
 	return models.Docker
 }
 
+func (c *Client) UUID() *string {
+	return &c.uuid
+}
+
 func (c *Client) Estimate(ctx context.Context, stats models.AssetScanStats, asset *models.Asset, assetScanTemplate *models.AssetScanTemplate) (*models.Estimation, error) {
 	return &models.Estimation{}, provider.FatalErrorf("Not Implemented")
 }
