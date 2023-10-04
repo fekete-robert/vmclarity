@@ -96,6 +96,10 @@ func (d *Discoverer) DiscoverAndCreateAssets(ctx context.Context) error {
 			continue
 		}
 
+		// TODO(sambetts) For ContainerImageInfo we need to handle some
+		// smart merging of the conflicting asset and the discovered
+		// asset. For example merging the list of RepoDigests.
+
 		// As we got a conflict it means there is an existing asset
 		// which matches the unique properties of this asset, in this
 		// case we'll patch the just AssetInfo and FirstSeen instead.

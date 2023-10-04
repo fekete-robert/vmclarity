@@ -58,6 +58,9 @@ bin/vmclarity-cli: $(shell find api) $(shell find cmd/vmclarity-cli) $(shell fin
 bin/vmclarity-ui-backend: $(shell find api) $(shell find cmd/vmclarity-ui-backend) $(shell find pkg) go.mod go.sum | $(BIN_DIR)
 	go build -race -o bin/vmclarity-ui-backend cmd/vmclarity-ui-backend/main.go
 
+bin/vmclarity-k8s-image-resolver: $(shell find api) $(shell find cmd/vmclarity-k8s-image-resolver) $(shell find pkg) go.mod go.sum | $(BIN_DIR) ## Build CLI
+	go build -race -o bin/vmclarity-k8s-image-resolver cmd/vmclarity-k8s-image-resolver/main.go
+
 .PHONY: clean
 clean: clean-ui clean-go ## Clean all build artifacts
 
@@ -156,7 +159,7 @@ test: ## Run Go unit tests
 ##@ Docker
 
 .PHONY: docker
-docker: docker-apiserver docker-cli docker-orchestrator docker-ui docker-ui-backend ## Build All Docker images
+docker: docker-apiserver docker-cli docker-orchestrator docker-ui docker-ui-backend docker-k8s-image-resolver ## Build All Docker images
 
 .PHONY: docker-apiserver
 docker-apiserver: ## Build API Server container image
@@ -201,8 +204,16 @@ docker-ui-backend: ## Build UI Backend container image
 		--build-arg COMMIT_HASH=$(COMMIT_HASH) \
 		-t $(DOCKER_IMAGE)-ui-backend:$(DOCKER_TAG) .
 
+.PHONY: docker-k8s-image-resolver
+docker-k8s-image-resolver: ## Build K8S Image Resolver Docker image
+	@(echo "Building k8s-image-resolver docker image ..." )
+	docker build --file ./Dockerfile.k8s-image-resolver --build-arg VERSION=${VERSION} \
+		--build-arg BUILD_TIMESTAMP=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ") \
+		--build-arg COMMIT_HASH=$(shell git rev-parse HEAD) \
+		-t ${DOCKER_IMAGE}-k8s-image-resolver:${DOCKER_TAG} .
+
 .PHONY: push-docker
-push-docker: push-docker-apiserver push-docker-cli push-docker-orchestrator push-docker-ui push-docker-ui-backend ## Build and push all container images
+push-docker: push-docker-apiserver push-docker-cli push-docker-orchestrator push-docker-ui push-docker-ui-backend push-docker-k8s-image-resolver ## Build and push all container images
 
 .PHONY: push-docker-apiserver
 push-docker-apiserver: docker-apiserver ## Build and push API Server container image
@@ -228,6 +239,11 @@ push-docker-ui: docker-ui ## Build and Push UI container image
 push-docker-ui-backend: docker-ui-backend ## Build and push UI Backend container image
 	$(info Publishing ui-backend docker image ...)
 	docker push $(DOCKER_IMAGE)-ui-backend:$(DOCKER_TAG)
+
+.PHONY: push-docker-k8s-image-resolver
+push-docker-k8s-image-resolver: docker-k8s-image-resolver ## Build and Push K8S Image Resolver Docker image
+	@echo "Publishing k8s-image-resolver docker image ..."
+	docker push $(DOCKER_IMAGE)-k8s-image-resolver:$(DOCKER_TAG)
 
 ##@ Code generation
 
