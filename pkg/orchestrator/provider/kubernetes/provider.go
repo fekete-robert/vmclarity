@@ -42,6 +42,7 @@ import (
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/orchestrator/provider"
+	"github.com/openclarity/vmclarity/pkg/imageresolver"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
 	"github.com/openclarity/vmclarity/pkg/shared/utils"
 )
@@ -126,23 +127,6 @@ type nodeWithPlatform struct {
 	os string
 }
 
-type ImageToResolve struct {
-	Ref string `yaml:"ref"`
-	Os string `yaml:"os"`
-	Arch string `yaml:"arch"`
-}
-
-type ResolverConfig struct {
-	ImagesToResolve []ImageToResolve `yaml:"imagesToResolve"`
-	ImagePullSecretPath string `yaml:"imagePullSecretPath"`
-	ResultEndpoint string `yaml:"resultEndpoint"`
-}
-
-type ResolverResponse struct {
-	Images []models.ContainerImageInfo
-	Errors []string
-}
-
 // nolint:cyclop,gocognit
 func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.AssetType) error {
 	logger := log.GetLoggerFromContextOrDefault(ctx)
@@ -168,7 +152,7 @@ func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.As
 
 	var errs []error
 	for _, namespace := range namespaces.Items {
-		imagesToResolve := map[ImageToResolve]struct{}{}
+		imagesToResolve := map[imageresolver.ImageToResolve]struct{}{}
 		imagePullSecrets := map[string]struct{}{}
 
 		pager := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
@@ -204,7 +188,7 @@ func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.As
 					continue
 				}
 
-				imagesToResolve[ImageToResolve{
+				imagesToResolve[imageresolver.ImageToResolve{
 					Ref: ref,
 					Arch: node.arch,
 					Os: node.os,
@@ -218,7 +202,7 @@ func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.As
 			continue
 		}
 
-		var response ResolverResponse
+		var response imageresolver.ResolverResponse
 		done := make(chan struct{})
 		var responseErr error
 		handlerFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +232,7 @@ func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.As
 		port := listener.Addr().(*net.TCPAddr).Port
 		ip := os.Getenv("DISCOVERY_LISTEN_IP")
 
-		config := ResolverConfig{
+		config := imageresolver.ResolverConfig{
 			ResultEndpoint: fmt.Sprintf("http://%s:%d/", ip, port),
 		}
 		for imageToResolve := range imagesToResolve {

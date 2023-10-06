@@ -15,6 +15,8 @@
 
 package models
 
+import "fmt"
+
 // GetFirstRepoTag returns the first repo tag if it exists. Otherwise, returns false.
 func (c *ContainerImageInfo) GetFirstRepoTag() (string, bool) {
 	var tag string
@@ -37,4 +39,67 @@ func (c *ContainerImageInfo) GetFirstRepoDigest() (string, bool) {
 	}
 
 	return digest, ok
+}
+
+func MergeComparable[T comparable](original, new T) (T, error) {
+	var zero T
+	if original != zero && new != zero && original != new {
+		return zero, fmt.Errorf("%v does not match %v", original, new)
+	}
+	if original != zero {
+		return original, nil
+	}
+	return new, nil
+}
+
+func UnionSlices[T comparable](inputs ...[]T) []T {
+	seen := map[T]struct{}{}
+	result := []T{}
+	for _, i := range inputs {
+		for _, j := range i {
+			if _, ok := seen[j]; !ok {
+				seen[j] = struct{}{}
+				result = append(result, j)
+			}
+		}
+	}
+	return result
+}
+
+func MergeContainerImage(original, new ContainerImageInfo) (*ContainerImageInfo, error) {
+	id, err := MergeComparable(*original.Id, *new.Id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge Id field: %w", err)
+	}
+
+	size, err := MergeComparable(*original.Size, *new.Size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge Size field: %w", err)
+	}
+
+	os, err := MergeComparable(*original.Os, *new.Os)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge Os field: %w", err)
+	}
+
+	architecture, err := MergeComparable(*original.Architecture, *new.Architecture)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge Architecture field: %w", err)
+	}
+
+	labels := UnionSlices(*original.Labels, *new.Labels)
+
+	repoDigests := UnionSlices(*original.RepoDigests, *new.RepoDigests)
+
+	repoTags := UnionSlices(*original.RepoTags, *new.RepoTags)
+
+	return &ContainerImageInfo{
+		Id:           &id,
+		Size:         &size,
+		Labels:       &labels,
+		Os:           &os,
+		Architecture: &architecture,
+		RepoDigests:  &repoDigests,
+		RepoTags:     &repoTags,
+	}, nil
 }
