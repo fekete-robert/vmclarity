@@ -758,3 +758,58 @@ swaggerUI:
       # -- List of capabilities to be dropped
       drop:
         - ALL
+
+crDiscoveryServer:
+  image:
+    # -- Freshclam Mirror container registry
+    registry: docker.io
+    # -- Freshclam Mirror container repository
+    repository: tehsmash/vmclarity-cr-discovery-server
+    # -- Freshclam Mirror container tag
+    tag: k8simagediscovery
+    # -- Freshclam Mirror image digest. If set will override the tag.
+    digest: ""
+    # -- Freshclam Mirror image pull policy
+    pullPolicy: IfNotPresent
+
+  resources:
+    # -- The resources limits for the freshclam mirror containers
+    limits: {}
+    # -- The requested resources for the freshclam mirror containers
+    requests: {}
+
+  serviceAccount:
+    # -- Enable creation of ServiceAccount
+    create: true
+    # -- The name of the ServiceAccount to use.
+    # If not set and create is true, it will use the component's calculated name.
+    name: ""
+    # -- Allows auto mount of ServiceAccountToken on the serviceAccount created.
+    # Can be set to false if pods using this serviceAccount do not need to use K8s API.
+    automountServiceAccountToken: false
+
+  podSecurityContext:
+    # -- Pod security context enabled
+    enabled: false
+    # -- Pod security context fsGroup
+    fsGroup: 1001
+
+  containerSecurityContext:
+    # -- Container security context enabled
+    enabled: true
+    # -- User ID which the containers should run as
+    runAsUser: 1001
+    # -- Group ID which the containers should run as
+    runAsGroup: 1001
+    # -- Whether the containers should run as a non-root user
+    runAsNonRoot: true
+    # -- Whether the container should run in privileged mode
+    privileged: false
+    # -- Force the child process to run as non-privileged
+    allowPrivilegeEscalation: false
+    # -- Mounts the container file system as ReadOnly
+    readOnlyRootFilesystem: true
+    capabilities:
+      # -- List of capabilities to be dropped
+      drop:
+        - ALL

@@ -16,6 +16,7 @@
 package models
 
 import "fmt"
+import "strings"
 
 // GetFirstRepoTag returns the first repo tag if it exists. Otherwise, returns false.
 func (c *ContainerImageInfo) GetFirstRepoTag() (string, bool) {
@@ -66,25 +67,25 @@ func UnionSlices[T comparable](inputs ...[]T) []T {
 	return result
 }
 
-func MergeContainerImage(original, new ContainerImageInfo) (*ContainerImageInfo, error) {
-	id, err := MergeComparable(*original.Id, *new.Id)
+func MergeContainerImage(original, new ContainerImageInfo) (ContainerImageInfo, error) {
+	id, err := MergeComparable(original.ImageID, new.ImageID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to merge Id field: %w", err)
+		return original, fmt.Errorf("failed to merge Id field: %w", err)
 	}
 
 	size, err := MergeComparable(*original.Size, *new.Size)
 	if err != nil {
-		return nil, fmt.Errorf("failed to merge Size field: %w", err)
+		return original, fmt.Errorf("failed to merge Size field: %w", err)
 	}
 
 	os, err := MergeComparable(*original.Os, *new.Os)
 	if err != nil {
-		return nil, fmt.Errorf("failed to merge Os field: %w", err)
+		return original, fmt.Errorf("failed to merge Os field: %w", err)
 	}
 
 	architecture, err := MergeComparable(*original.Architecture, *new.Architecture)
 	if err != nil {
-		return nil, fmt.Errorf("failed to merge Architecture field: %w", err)
+		return original, fmt.Errorf("failed to merge Architecture field: %w", err)
 	}
 
 	labels := UnionSlices(*original.Labels, *new.Labels)
@@ -93,8 +94,8 @@ func MergeContainerImage(original, new ContainerImageInfo) (*ContainerImageInfo,
 
 	repoTags := UnionSlices(*original.RepoTags, *new.RepoTags)
 
-	return &ContainerImageInfo{
-		Id:           &id,
+	return ContainerImageInfo{
+		ImageID:      id,
 		Size:         &size,
 		Labels:       &labels,
 		Os:           &os,
@@ -102,4 +103,42 @@ func MergeContainerImage(original, new ContainerImageInfo) (*ContainerImageInfo,
 		RepoDigests:  &repoDigests,
 		RepoTags:     &repoTags,
 	}, nil
+}
+
+func (cii ContainerImageInfo) String() string {
+	size := "nil"
+	if cii.Size != nil {
+		size = fmt.Sprintf("%d", *cii.Size)
+	}
+
+	labels := "nil"
+	if cii.Labels != nil {
+		l := make([]string, len(*cii.Labels))
+		for i, label := range *cii.Labels {
+			l[i] = fmt.Sprintf("{Key: \"%s\", Value: \"%s\"}", label.Key, label.Value)
+		}
+		labels = fmt.Sprintf("[%s]", strings.Join(l, ", "))
+	}
+
+	os := "nil"
+	if cii.Os != nil {
+		os = *cii.Os
+	}
+
+	architecture := "nil"
+	if cii.Architecture != nil {
+		architecture = *cii.Architecture
+	}
+
+	repoDigests := "nil"
+	if cii.RepoDigests != nil {
+		repoDigests = fmt.Sprintf("[%s]", strings.Join(*cii.RepoDigests, ", "))
+	}
+
+	repoTags := "nil"
+	if cii.RepoTags != nil {
+		repoTags = fmt.Sprintf("[%s]", strings.Join(*cii.RepoTags, ", "))
+	}
+
+	return fmt.Sprintf("ID: %s, Size: %s, Labels: %s, Arch: %s, OS: %s, Digests: %s, Tags: %s", cii.ImageID, size, labels, architecture, os, repoDigests, repoTags)
 }

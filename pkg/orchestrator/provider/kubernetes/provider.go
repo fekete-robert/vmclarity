@@ -19,14 +19,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"strings"
 
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	//applyconfigurationsmetav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -113,47 +109,6 @@ func (p *Provider) DiscoverAssets(ctx context.Context) provider.AssetDiscoverer 
 	}()
 
 	return assetDiscoverer
-}
-
-type nodeWithPlatform struct {
-	arch string
-	os   string
-}
-
-const (
-	imagePullSecretMountPath    = "/opt/vmclarity-pull-secrets" // nolint:gosec
-	imagePullSecretVolumePrefix = "image-pull-secret-"          // nolint:gosec
-)
-
-// Mount image pull secret as a volume into /opt/kubeclarity-pull-secrets so
-// that the scanner job can find it. setJobImagePullSecretPath must be used in
-// addition to this function to configure IMAGE_PULL_SECRET_PATH environment
-// variable.
-//  1. Create a volume "image-pull-secret-secretName" that holds the
-//     `secretName` data. We don't know if this secret exists so mark it
-//     optional so it doesn't block the pod starting.
-//  2. Mount the volume into each container to a specific path
-//     /opt/kubeclarity-pull-secrets/secretName
-func addJobImagePullSecretVolume(job *batchv1.Job, secretName string) {
-	volumeName := fmt.Sprintf("%s%s", imagePullSecretVolumePrefix, secretName)
-	optional := true
-	job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, corev1.Volume{
-		Name: volumeName,
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: secretName,
-				Optional:   &optional,
-			},
-		},
-	})
-	for i := range job.Spec.Template.Spec.Containers {
-		container := &job.Spec.Template.Spec.Containers[i]
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-			Name:      volumeName,
-			ReadOnly:  true,
-			MountPath: path.Join(imagePullSecretMountPath, secretName),
-		})
-	}
 }
 
 // nolint:cyclop
