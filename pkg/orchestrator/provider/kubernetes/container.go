@@ -13,10 +13,16 @@ import (
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/containerruntimediscovery"
+	"github.com/openclarity/vmclarity/pkg/shared/utils"
 )
 
-// nolint:cyclop,gocognit
-func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.AssetType) error {
+var crDiscovererLabels map[string]string = map[string]string{
+	"app.kubernetes.io/component": "cr-discovery-server",
+	"app.kubernetes.io/name":      "vmclarity",
+}
+
+// nolint:cyclop
+func (p *Provider) discoverContainers(ctx context.Context, outputChan chan models.AssetType) error {
 	// TODO(sambetts) Make namespace configurable
 	discoverers, err := p.clientset.CoreV1().Pods("vmclarity").List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(crDiscovererLabels).String(),
@@ -26,18 +32,18 @@ func (p *Provider) discoverImages(ctx context.Context, outputChan chan models.As
 	}
 
 	for _, discoverer := range discoverers.Items {
-		err := p.discoverImagesFromDiscoverer(ctx, outputChan, discoverer)
+		err := p.discoverContainersFromDiscoverer(ctx, outputChan, discoverer)
 		if err != nil {
-			return fmt.Errorf("failed to discover images from discoverer %s: %w", discoverer.Name, err)
+			return fmt.Errorf("failed to discover containers from discoverer %s: %w", discoverer.Name, err)
 		}
 	}
 
 	return nil
 }
 
-func (p *Provider) discoverImagesFromDiscoverer(ctx context.Context, outputChan chan models.AssetType, discoverer corev1.Pod) error {
+func (p *Provider) discoverContainersFromDiscoverer(ctx context.Context, outputChan chan models.AssetType, discoverer corev1.Pod) error {
 	discovererEndpoint := net.JoinHostPort(discoverer.Status.PodIP, "8080")
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/images", discovererEndpoint), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/containers", discovererEndpoint), nil)
 	if err != nil {
 		return fmt.Errorf("unable to create request to discoverer: %w", err)
 	}
@@ -47,25 +53,28 @@ func (p *Provider) discoverImagesFromDiscoverer(ctx context.Context, outputChan 
 		return fmt.Errorf("unable to contact discoverer: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected error from discoverer status %s", resp.Status)
 	}
 
-	var imageResponse containerruntimediscovery.ListImagesResponse
+	var containerResponse containerruntimediscovery.ListContainersResponse
 	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(&imageResponse)
+	err = decoder.Decode(&containerResponse)
 	if err != nil {
 		return fmt.Errorf("unable to decode response from discoverer: %w", err)
 	}
 
-	resp.Body.Close()
+	for _, container := range containerResponse.Containers {
+		// Update asset location based on the discoverer that
+		// we found it from
+		container.Location = utils.PointerTo(discoverer.Spec.NodeName)
 
-	for _, image := range imageResponse.Images {
 		// Convert to asset
 		asset := models.AssetType{}
-		err = asset.FromContainerImageInfo(image)
+		err = asset.FromContainerInfo(container)
 		if err != nil {
-			return fmt.Errorf("failed to create AssetType from ContainerImageInfo: %w", err)
+			return fmt.Errorf("failed to create AssetType from ContainerInfo: %w", err)
 		}
 
 		outputChan <- asset

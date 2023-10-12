@@ -11,6 +11,7 @@ import (
 
 type Discoverer interface {
 	Images(ctx context.Context) ([]models.ContainerImageInfo, error)
+	Containers(ctx context.Context) ([]models.ContainerInfo, error)
 }
 
 type DiscovererFactory func(ctx context.Context) (Discoverer, error)

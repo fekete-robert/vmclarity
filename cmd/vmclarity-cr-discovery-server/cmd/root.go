@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	// Base logger
+	// Base logger.
 	logger *logrus.Entry
 
 	rootCmd = &cobra.Command{
@@ -49,7 +49,7 @@ var (
 
 			logger.Infof("Shutting down...")
 
-			shutdownContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+			shutdownContext, cancel := context.WithTimeout(ctx, 30*time.Second) // nolint:gomnd
 			defer cancel()
 			err = ids.Shutdown(shutdownContext)
 			if err != nil {
@@ -65,6 +65,7 @@ var (
 
 // Execute executes the root command.
 func Execute() error {
+	// nolint: wrapcheck
 	return rootCmd.Execute()
 }
 

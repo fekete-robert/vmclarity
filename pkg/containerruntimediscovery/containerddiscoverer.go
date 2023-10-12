@@ -6,11 +6,13 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/nerdctl/pkg/imgutil"
+	"github.com/containerd/nerdctl/pkg/labels/k8slabels"
 	"github.com/containers/image/v5/docker/reference"
+	"github.com/sirupsen/logrus"
+
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
 	"github.com/openclarity/vmclarity/pkg/shared/utils"
-	"github.com/sirupsen/logrus"
 )
 
 type ContainerdDiscoverer struct {
@@ -101,7 +103,7 @@ func (cd *ContainerdDiscoverer) getContainerImageInfo(ctx context.Context, image
 }
 
 // ParseImageReferences parses a list of arbitrary image references and returns
-// the repotags and repodigests
+// the repotags and repodigests.
 func ParseImageReferences(refs []string) ([]string, []string) {
 	var tags, digests []string
 	for _, ref := range refs {
@@ -116,4 +118,59 @@ func ParseImageReferences(refs []string) ([]string, []string) {
 		}
 	}
 	return tags, digests
+}
+
+func (cd *ContainerdDiscoverer) Containers(ctx context.Context) ([]models.ContainerInfo, error) {
+	containers, err := cd.client.Containers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to list containers: %w", err)
+	}
+
+	result := make([]models.ContainerInfo, len(containers))
+	for i, container := range containers {
+		// Get container info
+		info, err := cd.getContainerInfo(ctx, container)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert container to ContainerInfo: %w", err)
+		}
+		result[i] = info
+	}
+	return result, nil
+}
+
+func (cd *ContainerdDiscoverer) getContainerInfo(ctx context.Context, container containerd.Container) (models.ContainerInfo, error) {
+	id := container.ID()
+
+	labels, err := container.Labels(ctx)
+	if err != nil {
+		return models.ContainerInfo{}, fmt.Errorf("unable to get labels for container %s: %w", id, err)
+	}
+	// If this doesn't exist then use empty string as the name. Containerd
+	// doesn't have the concept of a Name natively.
+	name := labels[k8slabels.ContainerName]
+
+	info, err := container.Info(ctx)
+	if err != nil {
+		return models.ContainerInfo{}, fmt.Errorf("unable to get info for container %s: %w", id, err)
+	}
+	createdAt := info.CreatedAt
+
+	image, err := container.Image(ctx)
+	if err != nil {
+		return models.ContainerInfo{}, fmt.Errorf("unable to get image from container %s: %w", id, err)
+	}
+
+	imageInfo, err := cd.getContainerImageInfo(ctx, image)
+	if err != nil {
+		return models.ContainerInfo{}, fmt.Errorf("unable to convert image %s to container image info: %w", image.Name(), err)
+	}
+
+	return models.ContainerInfo{
+		Id:            utils.PointerTo(container.ID()),
+		ContainerName: utils.PointerTo(name),
+		CreatedAt:     utils.PointerTo(createdAt),
+		Image:         utils.PointerTo(imageInfo),
+		Labels:        convertTags(labels),
+		ObjectType:    "ContainerInfo",
+	}, nil
 }

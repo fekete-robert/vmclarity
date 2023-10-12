@@ -3,13 +3,15 @@ package containerruntimediscovery
 import (
 	"context"
 	"fmt"
+	"time"
 
 	dtypes "github.com/docker/docker/api/types"
 	dclient "github.com/docker/docker/client"
+	"github.com/sirupsen/logrus"
+
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
 	"github.com/openclarity/vmclarity/pkg/shared/utils"
-	"github.com/sirupsen/logrus"
 )
 
 type DockerDiscoverer struct {
@@ -18,18 +20,18 @@ type DockerDiscoverer struct {
 }
 
 func NewDockerDiscoverer(ctx context.Context) (Discoverer, error) {
-	dockerClient, err := dclient.NewClientWithOpts(dclient.FromEnv, dclient.WithAPIVersionNegotiation())
+	client, err := dclient.NewClientWithOpts(dclient.FromEnv, dclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
 
-	_, err = dockerClient.ImageList(ctx, dtypes.ImageListOptions{})
+	_, err = client.ImageList(ctx, dtypes.ImageListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list images: %w", err)
 	}
 
 	return &DockerDiscoverer{
-		client: dockerClient,
+		client: client,
 		logger: log.GetLoggerFromContextOrDefault(ctx),
 	}, nil
 }
@@ -80,4 +82,51 @@ func convertTags(tags map[string]string) *[]models.Tag {
 		})
 	}
 	return &ret
+}
+
+func (dd *DockerDiscoverer) Containers(ctx context.Context) ([]models.ContainerInfo, error) {
+	// List all docker containers
+	containers, err := dd.client.ContainerList(ctx, dtypes.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	result := make([]models.ContainerInfo, len(containers))
+	for i, container := range containers {
+		// Get container info
+		info, err := dd.getContainerInfo(ctx, container.ID, container.ImageID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert container to ContainerInfo: %w", err)
+		}
+		result[i] = info
+	}
+	return result, nil
+}
+
+func (dd *DockerDiscoverer) getContainerInfo(ctx context.Context, containerID, imageID string) (models.ContainerInfo, error) {
+	// Inspect container
+	info, err := dd.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return models.ContainerInfo{}, fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	createdAt, err := time.Parse(time.RFC3339, info.Created)
+	if err != nil {
+		return models.ContainerInfo{}, fmt.Errorf("failed to parse time: %w", err)
+	}
+
+	// Get container image info
+	imageInfo, err := dd.getContainerImageInfo(ctx, imageID)
+	if err != nil {
+		return models.ContainerInfo{}, err
+	}
+
+	return models.ContainerInfo{
+		ContainerName: utils.PointerTo(info.Name),
+		CreatedAt:     utils.PointerTo(createdAt),
+		Id:            utils.PointerTo(containerID),
+		Image:         utils.PointerTo(imageInfo),
+		Labels:        convertTags(info.Config.Labels),
+		ObjectType:    "ContainerInfo",
+	}, nil
 }

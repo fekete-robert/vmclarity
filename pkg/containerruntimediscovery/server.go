@@ -5,13 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/openclarity/vmclarity/api/models"
-	"github.com/sirupsen/logrus"
 )
 
 type ListImagesResponse struct {
 	Images []models.ContainerImageInfo
+}
+
+type ListContainersResponse struct {
+	Containers []models.ContainerInfo
 }
 
 type ContainerRuntimeDiscoveryServer struct {
@@ -28,10 +34,13 @@ func NewContainerRuntimeDiscoveryServer(logger *logrus.Entry, listenAddr string,
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/images", ids.ListImages)
+	mux.HandleFunc("/containers", ids.ListContainers)
 
 	ids.server = &http.Server{
-		Addr:    listenAddr,
-		Handler: mux,
+		Addr:              listenAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 2 * time.Second,  // nolint:gomnd
+		IdleTimeout:       30 * time.Second, // nolint:gomnd
 	}
 
 	return ids
@@ -72,6 +81,35 @@ func (ids *ContainerRuntimeDiscoveryServer) ListImages(w http.ResponseWriter, re
 
 	response := ListImagesResponse{
 		Images: images,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	encoder := json.NewEncoder(w)
+	err = encoder.Encode(response)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (ids *ContainerRuntimeDiscoveryServer) ListContainers(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Path != "/containers" {
+		http.NotFound(w, req)
+		return
+	}
+
+	if req.Method != http.MethodGet {
+		http.Error(w, fmt.Sprintf("400 unsupported method %v", req.Method), http.StatusBadRequest)
+		return
+	}
+
+	containers, err := ids.discoverer.Containers(req.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to discover containers: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := ListContainersResponse{
+		Containers: containers,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	encoder := json.NewEncoder(w)
