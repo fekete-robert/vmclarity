@@ -150,10 +150,8 @@ spec:
             {{- if eq .Values.orchestrator.provider "kubernetes" }}
             - name: VMCLARITY_ORCHESTRATOR_PROVIDER
               value: "kubernetes"
-            - name: DISCOVERY_LISTEN_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
+            - name: VMCLARITY_KUBERNETES_CONTAINER_RUNTIME_DISCOVERY_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
             {{- with .Values.orchestrator.kubernetes }}
             {{- end -}}
             {{- end }}
