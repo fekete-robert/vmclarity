@@ -78,7 +78,7 @@ func (dd *DockerDiscoverer) getContainerImageInfo(ctx context.Context, imageID s
 
 	return models.ContainerImageInfo{
 		Architecture: utils.PointerTo(image.Architecture),
-		Id:           utils.PointerTo(image.ID),
+		ImageID:      image.ID,
 		Labels:       convertTags(image.Config.Labels),
 		RepoTags:     &image.RepoTags,
 		RepoDigests:  &image.RepoDigests,
@@ -139,7 +139,7 @@ func (dd *DockerDiscoverer) getContainerInfo(ctx context.Context, containerID, i
 	return models.ContainerInfo{
 		ContainerName: utils.PointerTo(info.Name),
 		CreatedAt:     utils.PointerTo(createdAt),
-		Id:            utils.PointerTo(containerID),
+		ContainerID:   containerID,
 		Image:         utils.PointerTo(imageInfo),
 		Labels:        convertTags(info.Config.Labels),
 		ObjectType:    "ContainerInfo",

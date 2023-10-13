@@ -109,40 +109,40 @@ func MergeContainerImage(original, target ContainerImageInfo) (ContainerImageInf
 
 const nilString = "nil"
 
-func (cii ContainerImageInfo) String() string {
+func (c ContainerImageInfo) String() string {
 	size := nilString
-	if cii.Size != nil {
-		size = fmt.Sprintf("%d", *cii.Size)
+	if c.Size != nil {
+		size = fmt.Sprintf("%d", *c.Size)
 	}
 
 	labels := nilString
-	if cii.Labels != nil {
-		l := make([]string, len(*cii.Labels))
-		for i, label := range *cii.Labels {
+	if c.Labels != nil {
+		l := make([]string, len(*c.Labels))
+		for i, label := range *c.Labels {
 			l[i] = fmt.Sprintf("{Key: \"%s\", Value: \"%s\"}", label.Key, label.Value)
 		}
 		labels = fmt.Sprintf("[%s]", strings.Join(l, ", "))
 	}
 
 	os := nilString
-	if cii.Os != nil {
-		os = *cii.Os
+	if c.Os != nil {
+		os = *c.Os
 	}
 
 	architecture := nilString
-	if cii.Architecture != nil {
-		architecture = *cii.Architecture
+	if c.Architecture != nil {
+		architecture = *c.Architecture
 	}
 
 	repoDigests := nilString
-	if cii.RepoDigests != nil {
-		repoDigests = fmt.Sprintf("[%s]", strings.Join(*cii.RepoDigests, ", "))
+	if c.RepoDigests != nil {
+		repoDigests = fmt.Sprintf("[%s]", strings.Join(*c.RepoDigests, ", "))
 	}
 
 	repoTags := nilString
-	if cii.RepoTags != nil {
-		repoTags = fmt.Sprintf("[%s]", strings.Join(*cii.RepoTags, ", "))
+	if c.RepoTags != nil {
+		repoTags = fmt.Sprintf("[%s]", strings.Join(*c.RepoTags, ", "))
 	}
 
-	return fmt.Sprintf("{ID: %s, Size: %s, Labels: %s, Arch: %s, OS: %s, Digests: %s, Tags: %s}", cii.ImageID, size, labels, architecture, os, repoDigests, repoTags)
+	return fmt.Sprintf("{ImageID: %s, Size: %s, Labels: %s, Arch: %s, OS: %s, Digests: %s, Tags: %s}", c.ImageID, size, labels, architecture, os, repoDigests, repoTags)
 }

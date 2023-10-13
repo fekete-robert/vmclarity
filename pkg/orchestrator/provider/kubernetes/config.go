@@ -33,7 +33,6 @@ type Config struct {
 	// Container Runtime Discovery Namespace is the namespace where the
 	// container runtime discovery daemonset is running.
 	ContainerRuntimeDiscoveryNamespace string `mapstructure:"container_runtime_discovery_namespace"`
-
 }
 
 func NewConfig() (*Config, error) {

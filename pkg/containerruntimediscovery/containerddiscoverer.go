@@ -65,7 +65,7 @@ func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerI
 			return nil, fmt.Errorf("unable to convert image %s to container image info: %w", image.Name(), err)
 		}
 
-		existing, ok := imageSet[*cii.Id]
+		existing, ok := imageSet[cii.ImageID]
 		if ok {
 			merged, err := models.MergeContainerImage(existing, cii)
 			if err != nil {
@@ -73,7 +73,7 @@ func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerI
 			}
 			cii = merged
 		}
-		imageSet[*cii.Id] = cii
+		imageSet[cii.ImageID] = cii
 	}
 
 	result := []models.ContainerImageInfo{}
@@ -106,7 +106,7 @@ func (cd *ContainerdDiscoverer) getContainerImageInfo(ctx context.Context, image
 	repoTags, repoDigests := ParseImageReferences([]string{image.Name()})
 
 	return models.ContainerImageInfo{
-		Id:           &id,
+		ImageID:      id,
 		Architecture: utils.PointerTo(imageSpec.Architecture),
 		Labels:       convertTags(imageSpec.Config.Labels),
 		RepoTags:     &repoTags,
@@ -181,7 +181,7 @@ func (cd *ContainerdDiscoverer) getContainerInfo(ctx context.Context, container 
 	}
 
 	return models.ContainerInfo{
-		Id:            utils.PointerTo(container.ID()),
+		ContainerID:   container.ID(),
 		ContainerName: utils.PointerTo(name),
 		CreatedAt:     utils.PointerTo(createdAt),
 		Image:         utils.PointerTo(imageInfo),
