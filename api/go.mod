@@ -2,8 +2,6 @@ module github.com/openclarity/vmclarity/api
 
 go 1.20
 
-toolchain go1.21.0
-
 require (
 	github.com/deepmap/oapi-codegen v1.16.2
 	github.com/getkin/kin-openapi v0.118.0
