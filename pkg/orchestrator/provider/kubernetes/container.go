@@ -23,8 +23,6 @@ import (
 	"net/http"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/containerruntimediscovery"
@@ -37,15 +35,8 @@ var crDiscovererLabels map[string]string = map[string]string{
 }
 
 // nolint:cyclop
-func (p *Provider) discoverContainers(ctx context.Context, outputChan chan models.AssetType) error {
-	discoverers, err := p.clientset.CoreV1().Pods(p.config.ContainerRuntimeDiscoveryNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labels.Set(crDiscovererLabels).String(),
-	})
-	if err != nil {
-		return fmt.Errorf("unable to list discoverers: %w", err)
-	}
-
-	for _, discoverer := range discoverers.Items {
+func (p *Provider) discoverContainers(ctx context.Context, outputChan chan models.AssetType, crDiscoverers []corev1.Pod) error {
+	for _, discoverer := range crDiscoverers {
 		err := p.discoverContainersFromDiscoverer(ctx, outputChan, discoverer)
 		if err != nil {
 			return fmt.Errorf("failed to discover containers from discoverer %s: %w", discoverer.Name, err)

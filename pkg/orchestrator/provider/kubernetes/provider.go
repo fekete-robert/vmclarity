@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -85,14 +87,22 @@ func (p *Provider) DiscoverAssets(ctx context.Context) provider.AssetDiscoverer 
 	go func() {
 		defer close(assetDiscoverer.OutputChan)
 
+		discoverers, err := p.clientset.CoreV1().Pods(p.config.ContainerRuntimeDiscoveryNamespace).List(ctx, metav1.ListOptions{
+			LabelSelector: labels.Set(crDiscovererLabels).String(),
+		})
+		if err != nil {
+			assetDiscoverer.Error = fmt.Errorf("unable to list discoverers: %w", err)
+			return
+		}
+
 		var errs []error
 
-		err := p.discoverImages(ctx, assetDiscoverer.OutputChan)
+		err = p.discoverImages(ctx, assetDiscoverer.OutputChan, discoverers.Items)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to discover images: %w", err))
 		}
 
-		err = p.discoverContainers(ctx, assetDiscoverer.OutputChan)
+		err = p.discoverContainers(ctx, assetDiscoverer.OutputChan, discoverers.Items)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to discover containers: %w", err))
 		}
