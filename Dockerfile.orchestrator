@@ -24,6 +24,8 @@ ENV CGO_ENABLED=1
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    ls -alh /go/pkg/mod /root/.cache/go-build && \
+    go env && \
     go build -ldflags="-s -w -extldflags -static \
      -X 'github.com/openclarity/vmclarity/pkg/version.Version=${VERSION}' \
      -X 'github.com/openclarity/vmclarity/pkg/version.CommitHash=${COMMIT_HASH}' \

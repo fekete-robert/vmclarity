@@ -24,6 +24,10 @@ on:
         required: true
         type: string
         description: 'The build timestamp to be used for binaries.'
+      inject_go_cache:
+        type: boolean
+        default: true
+        description: 'Whether to inject Go cache from previous step into Docker build or not'
 
 jobs:
   build-vars:
@@ -65,20 +69,54 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.ref }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore Go cache
+        if: inputs.inject_go_cache
+        uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ github.ref_name }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ github.ref_name }}-
+            ${{ runner.os }}-go-${{ github.event.repository.default_branch }}-
+
+      - name: Expand cache directory paths
+        if: inputs.inject_go_cache
+        id: cache-dirs
+        run: |
+          echo "go-mod=$(realpath ~/go/pkg/mod)" >> "$GITHUB_OUTPUT"
+          echo "go-build=$(realpath ~/.cache/go-build)" >> "$GITHUB_OUTPUT"
+
+      - name: Inject Go build cache into Docker
+        if: inputs.inject_go_cache
+        uses: reproducible-containers/buildkit-cache-dance@v2.1.2
+        with:
+          cache-source: "${{ steps.cache-dirs.outputs.go-build }}"
+          cache-target: /root/.cache/go-build
+
+      - name: Inject Go dependency cache into Docker
+        if: inputs.inject_go_cache
+        uses: reproducible-containers/buildkit-cache-dance@v2.1.2
+        with:
+          cache-source: "${{ steps.cache-dirs.outputs.go-mod }}"
+          cache-target: /go/pkg/mod
+
+      - name: Cache test
+        uses: docker/build-push-action@v5
+        if: inputs.inject_go_cache
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          file: Dockerfile.cache-inject
+          outputs: type=image,name=cache-inject,push-by-digest=true,name-canonical=true,push=false
 
       - name: Build
         uses: docker/build-push-action@v5
@@ -88,8 +126,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           file: ${{ inputs.dockerfile }}
           outputs: type=image,name=${{ inputs.image_name }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache
           build-args: |
             VERSION=${{ inputs.image_tag }}
             BUILD_TIMESTAMP=${{ inputs.timestamp }}

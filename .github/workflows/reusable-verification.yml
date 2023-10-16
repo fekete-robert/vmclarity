@@ -16,7 +16,9 @@ jobs:
       - name: License cache
         uses: actions/cache@v3
         with:
-          path: .licensei.cache
+          path: |
+            .licensei.cache
+            vendor
           key: licensei-${{ github.ref_name }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             licensei-${{ github.ref_name }}-

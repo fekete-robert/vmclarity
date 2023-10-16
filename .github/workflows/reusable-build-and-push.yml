@@ -94,6 +94,7 @@ jobs:
       image_tag: ${{ inputs.image_tag }}
       push: ${{ inputs.push }}
       timestamp: ${{ needs.timestamp.outputs.timestamp }}
+      inject_go_cache: false
 
   vmclarity-cli:
     needs:
