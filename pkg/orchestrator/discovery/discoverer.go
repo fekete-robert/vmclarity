@@ -80,7 +80,7 @@ func (d *Discoverer) handleAssetConflict(existingAsset, newAsset models.AssetTyp
 		if err != nil {
 			return models.AssetType{}, fmt.Errorf("failed to convert existing asset to ContainerImageInfo: %w", err)
 		}
-		mergedContainerImageInfo, err := models.MergeContainerImage(existingContainerImageInfo, newContainerImageInfo)
+		mergedContainerImageInfo, err := existingContainerImageInfo.Merge(newContainerImageInfo)
 		if err != nil {
 			return models.AssetType{}, fmt.Errorf("failed to merge new and existing ContainerImageInfos: %w", err)
 		}

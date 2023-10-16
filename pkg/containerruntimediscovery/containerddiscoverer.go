@@ -67,7 +67,7 @@ func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerI
 
 		existing, ok := imageSet[cii.ImageID]
 		if ok {
-			merged, err := models.MergeContainerImage(existing, cii)
+			merged, err := existing.Merge(cii)
 			if err != nil {
 				return nil, fmt.Errorf("unable to merge image %v with %v: %w", existing, cii, err)
 			}

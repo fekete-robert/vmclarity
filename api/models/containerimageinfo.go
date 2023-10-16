@@ -44,57 +44,36 @@ func (c *ContainerImageInfo) GetFirstRepoDigest() (string, bool) {
 	return digest, ok
 }
 
-func MergeComparable[T comparable](original, target T) (T, error) {
-	var zero T
-	if original != zero && target != zero && original != target {
-		return zero, fmt.Errorf("%v does not match %v", original, target)
-	}
-	if original != zero {
-		return original, nil
-	}
-	return target, nil
-}
-
-func UnionSlices[T comparable](inputs ...[]T) []T {
-	seen := map[T]struct{}{}
-	result := []T{}
-	for _, i := range inputs {
-		for _, j := range i {
-			if _, ok := seen[j]; !ok {
-				seen[j] = struct{}{}
-				result = append(result, j)
-			}
-		}
-	}
-	return result
-}
-
-func MergeContainerImage(original, target ContainerImageInfo) (ContainerImageInfo, error) {
-	id, err := MergeComparable(original.ImageID, target.ImageID)
+// Merge merges target and c together and then returns the merged result. c is
+// not a pointer so that:
+// a) a non-pointer ContainerImageInfo can be merged.
+// b) the source ContainerimageInfo can not be modified by this function.
+func (c ContainerImageInfo) Merge(target ContainerImageInfo) (ContainerImageInfo, error) {
+	id, err := CoalesceComparable(c.ImageID, target.ImageID)
 	if err != nil {
-		return original, fmt.Errorf("failed to merge Id field: %w", err)
+		return c, fmt.Errorf("failed to merge Id field: %w", err)
 	}
 
-	size, err := MergeComparable(*original.Size, *target.Size)
+	size, err := CoalesceComparable(*c.Size, *target.Size)
 	if err != nil {
-		return original, fmt.Errorf("failed to merge Size field: %w", err)
+		return c, fmt.Errorf("failed to merge Size field: %w", err)
 	}
 
-	os, err := MergeComparable(*original.Os, *target.Os)
+	os, err := CoalesceComparable(*c.Os, *target.Os)
 	if err != nil {
-		return original, fmt.Errorf("failed to merge Os field: %w", err)
+		return c, fmt.Errorf("failed to merge Os field: %w", err)
 	}
 
-	architecture, err := MergeComparable(*original.Architecture, *target.Architecture)
+	architecture, err := CoalesceComparable(*c.Architecture, *target.Architecture)
 	if err != nil {
-		return original, fmt.Errorf("failed to merge Architecture field: %w", err)
+		return c, fmt.Errorf("failed to merge Architecture field: %w", err)
 	}
 
-	labels := UnionSlices(*original.Labels, *target.Labels)
+	labels := UnionSlices(*c.Labels, *target.Labels)
 
-	repoDigests := UnionSlices(*original.RepoDigests, *target.RepoDigests)
+	repoDigests := UnionSlices(*c.RepoDigests, *target.RepoDigests)
 
-	repoTags := UnionSlices(*original.RepoTags, *target.RepoTags)
+	repoTags := UnionSlices(*c.RepoTags, *target.RepoTags)
 
 	return ContainerImageInfo{
 		ImageID:      id,
