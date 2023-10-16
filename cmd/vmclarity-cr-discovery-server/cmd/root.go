@@ -32,6 +32,8 @@ import (
 )
 
 var (
+	listenAddr string
+
 	// Base logger.
 	logger *logrus.Entry
 
@@ -52,11 +54,8 @@ var (
 			abortCtx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			// TODO(sambetts) Get listen address from the viper
-			// configuration with a default
-			listenAddr := ":8080"
-			ids := containerruntimediscovery.NewContainerRuntimeDiscoveryServer(logger, listenAddr, discoverer)
-			ids.Serve()
+			crds := containerruntimediscovery.NewContainerRuntimeDiscoveryServer(logger, listenAddr, discoverer)
+			crds.Serve()
 
 			logger.Infof("Server started listening on %s...", listenAddr)
 
@@ -66,7 +65,7 @@ var (
 
 			shutdownContext, cancel := context.WithTimeout(ctx, 30*time.Second) // nolint:gomnd
 			defer cancel()
-			err = ids.Shutdown(shutdownContext)
+			err = crds.Shutdown(shutdownContext)
 			if err != nil {
 				return fmt.Errorf("failed to shutdown server: %w", err)
 			}
@@ -86,6 +85,12 @@ func Execute() error {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+	rootCmd.PersistentFlags().StringVar(
+		&listenAddr,
+		"listenAddr",
+		":8080",
+		"The address and port to run the discovery HTTP server on. If address is unspecified\n"+
+			"such as :8080 then the server will listen on all available IP addresses of the system.")
 
 	log.InitLogger(logrus.InfoLevel.String(), os.Stderr)
 	logger = logrus.WithField("app", "vmclarity")
