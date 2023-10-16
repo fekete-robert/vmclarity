@@ -44,6 +44,7 @@ func NewConfig() (*Config, error) {
 	v.AutomaticEnv()
 
 	_ = v.BindEnv("kubeconfig")
+	_ = v.BindEnv("container_runtime_discovery_namespace")
 
 	config := &Config{}
 	if err := v.Unmarshal(config); err != nil {
