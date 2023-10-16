@@ -66,11 +66,11 @@ func (d *Discoverer) Start(ctx context.Context) {
 }
 
 func (d *Discoverer) handleAssetConflict(existingAsset, newAsset models.AssetType) (models.AssetType, error) {
-	descriminator, err := newAsset.Discriminator()
+	discriminator, err := newAsset.Discriminator()
 	if err != nil {
 		return models.AssetType{}, fmt.Errorf("failed to get objectType from discovered asset: %w", err)
 	}
-	switch descriminator {
+	switch discriminator {
 	case "ContainerImageInfo":
 		newContainerImageInfo, err := newAsset.AsContainerImageInfo()
 		if err != nil {
