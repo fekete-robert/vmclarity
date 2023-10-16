@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd"
+	criConstants "github.com/containerd/containerd/pkg/cri/constants"
 	"github.com/containerd/nerdctl/pkg/imgutil"
 	"github.com/containerd/nerdctl/pkg/labels/k8slabels"
 	"github.com/containers/image/v5/docker/reference"
@@ -36,7 +37,12 @@ type ContainerdDiscoverer struct {
 }
 
 func NewContainerdDiscoverer(ctx context.Context) (Discoverer, error) {
-	client, err := containerd.New("/var/run/containerd/containerd.sock", containerd.WithDefaultNamespace("k8s.io"))
+	// Containerd supports multiple namespaces so that a single daemon can
+	// be used by multiple clients like Docker and Kubernetes and the
+	// resources will not conflict etc. In order to discover all the
+	// containers for kubernetes we need to set the kubernetes namespace as
+	// the default for our client.
+	client, err := containerd.New("/var/run/containerd/containerd.sock", containerd.WithDefaultNamespace(criConstants.K8sContainerdNamespace))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create containerd client: %w", err)
 	}
