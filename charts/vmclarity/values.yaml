@@ -761,21 +761,21 @@ swaggerUI:
 
 crDiscoveryServer:
   image:
-    # -- Freshclam Mirror container registry
+    # -- Container Runtime Discovery Server container registry
     registry: docker.io
-    # -- Freshclam Mirror container repository
+    # -- Container Runtime Discovery Server container repository
     repository: tehsmash/vmclarity-cr-discovery-server
-    # -- Freshclam Mirror container tag
+    # -- Container Runtime Discovery Server container tag
     tag: k8simagediscovery
-    # -- Freshclam Mirror image digest. If set will override the tag.
+    # -- Container Runtime Discovery Server image digest. If set will override the tag.
     digest: ""
-    # -- Freshclam Mirror image pull policy
+    # -- Container Runtime Discovery Server image pull policy
     pullPolicy: IfNotPresent
 
   resources:
-    # -- The resources limits for the freshclam mirror containers
+    # -- The resources limits for the container runtime discovery server containers
     limits: {}
-    # -- The requested resources for the freshclam mirror containers
+    # -- The requested resources for the container runtime discovery server containers
     requests: {}
 
   serviceAccount:
