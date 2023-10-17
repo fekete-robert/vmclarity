@@ -54,9 +54,19 @@ func (c ContainerImageInfo) Merge(target ContainerImageInfo) (ContainerImageInfo
 		return c, fmt.Errorf("failed to merge Id field: %w", err)
 	}
 
+	// NOTE(sambetts) Size seems to depend on the host and container
+	// runtime; there doesn't seem to be a clean way to get a repeatable
+	// size. If the sizes conflict we'll pick the larger of the two sizes
+	// as it is likely to be more accurate to the real size not taking into
+	// account deduplication in the CRI etc. The sizes are normally within
+	// a few kilobytes of each other.
 	size, err := CoalesceComparable(*c.Size, *target.Size)
 	if err != nil {
-		return c, fmt.Errorf("failed to merge Size field: %w", err)
+		if *c.Size > *target.Size {
+			size = *c.Size
+		} else {
+			size = *target.Size
+		}
 	}
 
 	os, err := CoalesceComparable(*c.Os, *target.Os)

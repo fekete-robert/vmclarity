@@ -71,6 +71,11 @@ func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerI
 			return nil, fmt.Errorf("unable to convert image %s to container image info: %w", image.Name(), err)
 		}
 
+		if cii.ImageID == "" {
+			cd.logger.Warnf("found image with empty ImageID: %s", cii.String())
+			continue
+		}
+
 		existing, ok := imageSet[cii.ImageID]
 		if ok {
 			merged, err := existing.Merge(cii)

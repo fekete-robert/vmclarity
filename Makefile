@@ -159,7 +159,7 @@ test: ## Run Go unit tests
 ##@ Docker
 
 .PHONY: docker
-docker: docker-apiserver docker-cli docker-orchestrator docker-ui docker-ui-backend docker-k8s-image-resolver ## Build All Docker images
+docker: docker-apiserver docker-cli docker-orchestrator docker-ui docker-ui-backend docker-cr-discovery-server ## Build All Docker images
 
 .PHONY: docker-apiserver
 docker-apiserver: ## Build API Server container image
@@ -213,7 +213,7 @@ docker-cr-discovery-server: ## Build K8S Image Resolver Docker image
 		-t ${DOCKER_IMAGE}-cr-discovery-server:${DOCKER_TAG} .
 
 .PHONY: push-docker
-push-docker: push-docker-apiserver push-docker-cli push-docker-orchestrator push-docker-ui push-docker-ui-backend push-docker-k8s-image-resolver ## Build and push all container images
+push-docker: push-docker-apiserver push-docker-cli push-docker-orchestrator push-docker-ui push-docker-ui-backend push-docker-cr-discovery-server ## Build and Push All Docker images
 
 .PHONY: push-docker-apiserver
 push-docker-apiserver: docker-apiserver ## Build and push API Server container image

@@ -26,6 +26,7 @@ import (
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/containerruntimediscovery"
+	"github.com/openclarity/vmclarity/pkg/shared/log"
 )
 
 // nolint:cyclop,gocognit
@@ -66,6 +67,11 @@ func (p *Provider) discoverImagesFromDiscoverer(ctx context.Context, outputChan 
 	resp.Body.Close()
 
 	for _, image := range imageResponse.Images {
+		if image.ImageID == "" {
+			log.GetLoggerFromContextOrDefault(ctx).Warnf("found image with empty ImageID: %s", image.String())
+			continue
+		}
+
 		// Convert to asset
 		asset := models.AssetType{}
 		err = asset.FromContainerImageInfo(image)

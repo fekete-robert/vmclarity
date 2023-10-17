@@ -82,7 +82,7 @@ func (d *Discoverer) handleAssetConflict(existingAsset, newAsset models.AssetTyp
 		}
 		mergedContainerImageInfo, err := existingContainerImageInfo.Merge(newContainerImageInfo)
 		if err != nil {
-			return models.AssetType{}, fmt.Errorf("failed to merge new and existing ContainerImageInfos: %w", err)
+			return models.AssetType{}, fmt.Errorf("failed to merge new and existing ContainerImageInfos, existing: %s, new: %s: %w", existingContainerImageInfo.String(), newContainerImageInfo.String(), err)
 		}
 
 		mergedAssetType := models.AssetType{}
