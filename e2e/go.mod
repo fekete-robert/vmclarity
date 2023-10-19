@@ -71,7 +71,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/gnostic v0.5.7-v3refs // indirect
+	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20230926050212-f7f687d19a98 // indirect
@@ -194,39 +194,18 @@ require (
 replace (
 	github.com/openclarity/vmclarity => ../
 	github.com/openclarity/vmclarity/api => ../api
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc => go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.40.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp => go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
+)
 
-	// These are replaced in order to be compatible with docker compose v2.22.0
+// These are replaced in order to satisfy the otel conflict between containerd
+// (imported by VMClarity) and docker compose.
+replace (
 	go.opentelemetry.io/otel => go.opentelemetry.io/otel v1.14.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace => go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.14.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.14.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.14.0
 	go.opentelemetry.io/otel/metric => go.opentelemetry.io/otel/metric v0.37.0
 	go.opentelemetry.io/otel/sdk => go.opentelemetry.io/otel/sdk v1.14.0
-	go.opentelemetry.io/otel/trace => go.opentelemetry.io/otel/trace v1.14.0
 )
 
 replace (
 	github.com/openclarity/kubeclarity/api => github.com/openclarity/kubeclarity/api v0.0.0-20230503074245-0199b41a7b8f
 	github.com/openclarity/kubeclarity/cli => github.com/openclarity/kubeclarity/cli v0.0.0-20230503074245-0199b41a7b8f
 	github.com/openclarity/kubeclarity/shared => github.com/openclarity/kubeclarity/shared v0.0.0-20230503074245-0199b41a7b8f
-)
-
-// Replaces required by Docker or its components
-replace (
-	// Docker Compose
-	// https://github.com/docker/compose/blob/v2.20.2/go.mod#L192
-	github.com/cucumber/godog => github.com/laurazard/godog v0.0.0-20220922095256-4c4b17abdae7
-
-	// NOTE(adamtagscherer):
-	// For k8s dependencies, we use a replace directive, to prevent them being
-	// upgraded to the version specified in containerd, which is not relevant to the
-	// version needed.
-	// See https://github.com/docker/buildx/pull/948 for details.
-	// https://github.com/docker/buildx/blob/v0.9.1/go.mod#L62-L64
-	k8s.io/api => k8s.io/api v0.26.2
-	k8s.io/apimachinery => k8s.io/apimachinery v0.26.2
-	k8s.io/client-go => k8s.io/client-go v0.26.2
-	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20221012153701-172d655c2280
 )
