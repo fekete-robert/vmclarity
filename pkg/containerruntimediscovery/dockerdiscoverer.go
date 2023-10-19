@@ -22,16 +22,13 @@ import (
 
 	dtypes "github.com/docker/docker/api/types"
 	dclient "github.com/docker/docker/client"
-	"github.com/sirupsen/logrus"
 
 	"github.com/openclarity/vmclarity/api/models"
-	"github.com/openclarity/vmclarity/pkg/shared/log"
 	"github.com/openclarity/vmclarity/pkg/shared/utils"
 )
 
 type DockerDiscoverer struct {
 	client *dclient.Client
-	logger *logrus.Entry
 }
 
 func NewDockerDiscoverer(ctx context.Context) (Discoverer, error) {
@@ -47,7 +44,6 @@ func NewDockerDiscoverer(ctx context.Context) (Discoverer, error) {
 
 	return &DockerDiscoverer{
 		client: client,
-		logger: log.GetLoggerFromContextOrDefault(ctx),
 	}, nil
 }
 

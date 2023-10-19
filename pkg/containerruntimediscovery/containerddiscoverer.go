@@ -24,7 +24,6 @@ import (
 	"github.com/containerd/nerdctl/pkg/imgutil"
 	"github.com/containerd/nerdctl/pkg/labels/k8slabels"
 	"github.com/containers/image/v5/docker/reference"
-	"github.com/sirupsen/logrus"
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
@@ -33,7 +32,6 @@ import (
 
 type ContainerdDiscoverer struct {
 	client *containerd.Client
-	logger *logrus.Entry
 }
 
 func NewContainerdDiscoverer(ctx context.Context) (Discoverer, error) {
@@ -54,11 +52,12 @@ func NewContainerdDiscoverer(ctx context.Context) (Discoverer, error) {
 
 	return &ContainerdDiscoverer{
 		client: client,
-		logger: log.GetLoggerFromContextOrDefault(ctx),
 	}, nil
 }
 
 func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerImageInfo, error) {
+	logger := log.GetLoggerFromContextOrDefault(ctx)
+
 	images, err := cd.client.ListImages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list images: %w", err)
@@ -72,7 +71,7 @@ func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerI
 		}
 
 		if cii.ImageID == "" {
-			cd.logger.Warnf("found image with empty ImageID: %s", cii.String())
+			logger.Warnf("found image with empty ImageID: %s", cii.String())
 			continue
 		}
 

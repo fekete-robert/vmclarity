@@ -22,9 +22,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/openclarity/vmclarity/api/models"
+	"github.com/openclarity/vmclarity/pkg/shared/log"
 )
 
 type ListImagesResponse struct {
@@ -36,16 +35,14 @@ type ListContainersResponse struct {
 }
 
 type ContainerRuntimeDiscoveryServer struct {
-	logger *logrus.Entry
 	server *http.Server
 
 	discoverer Discoverer
 }
 
-func NewContainerRuntimeDiscoveryServer(logger *logrus.Entry, listenAddr string, discoverer Discoverer) *ContainerRuntimeDiscoveryServer {
+func NewContainerRuntimeDiscoveryServer(listenAddr string, discoverer Discoverer) *ContainerRuntimeDiscoveryServer {
 	crds := &ContainerRuntimeDiscoveryServer{
 		discoverer: discoverer,
-		logger:     logger,
 	}
 
 	mux := http.NewServeMux()
@@ -62,10 +59,11 @@ func NewContainerRuntimeDiscoveryServer(logger *logrus.Entry, listenAddr string,
 	return crds
 }
 
-func (crds *ContainerRuntimeDiscoveryServer) Serve() {
+func (crds *ContainerRuntimeDiscoveryServer) Serve(ctx context.Context) {
+	logger := log.GetLoggerFromContextOrDefault(ctx)
 	go func() {
 		if err := crds.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			crds.logger.Fatalf("image resolver server error: %v", err)
+			logger.Fatalf("image resolver server error: %v", err)
 		}
 	}()
 }
