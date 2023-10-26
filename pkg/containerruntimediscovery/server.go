@@ -17,10 +17,12 @@ package containerruntimediscovery
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"time"
+
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
@@ -35,34 +37,34 @@ type ListContainersResponse struct {
 }
 
 type ContainerRuntimeDiscoveryServer struct {
-	server *http.Server
+	server *echo.Echo
 
 	discoverer Discoverer
 }
 
-func NewContainerRuntimeDiscoveryServer(listenAddr string, discoverer Discoverer) *ContainerRuntimeDiscoveryServer {
+func NewContainerRuntimeDiscoveryServer(discoverer Discoverer) *ContainerRuntimeDiscoveryServer {
 	crds := &ContainerRuntimeDiscoveryServer{
 		discoverer: discoverer,
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/images", crds.ListImages)
-	mux.HandleFunc("/containers", crds.ListContainers)
+	e := echo.New()
+	e.Use(middleware.Recover())
 
-	crds.server = &http.Server{
-		Addr:              listenAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 2 * time.Second,  // nolint:gomnd
-		IdleTimeout:       30 * time.Second, // nolint:gomnd
-	}
+	e.GET("/images", crds.ListImages)
+	e.GET("/images/:id", crds.GetImage)
+	e.GET("/exportimage/:id", crds.ExportImage)
+	e.GET("/exportimagefilesystem/:id", crds.ExportImageFilesystem)
+	e.GET("/containers", crds.ListContainers)
+
+	crds.server = e
 
 	return crds
 }
 
-func (crds *ContainerRuntimeDiscoveryServer) Serve(ctx context.Context) {
+func (crds *ContainerRuntimeDiscoveryServer) Serve(ctx context.Context, listenAddr string) {
 	logger := log.GetLoggerFromContextOrDefault(ctx)
 	go func() {
-		if err := crds.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := crds.server.Start(listenAddr); err != nil && err != http.ErrServerClosed {
 			logger.Fatalf("image resolver server error: %v", err)
 		}
 	}()
@@ -76,60 +78,63 @@ func (crds *ContainerRuntimeDiscoveryServer) Shutdown(ctx context.Context) error
 	return nil
 }
 
-func (crds *ContainerRuntimeDiscoveryServer) ListImages(w http.ResponseWriter, req *http.Request) {
-	if req.URL.Path != "/images" {
-		http.NotFound(w, req)
-		return
-	}
+func (crds *ContainerRuntimeDiscoveryServer) ListImages(c echo.Context) error {
+	ctx := c.Request().Context()
 
-	if req.Method != http.MethodGet {
-		http.Error(w, fmt.Sprintf("400 unsupported method %v", req.Method), http.StatusBadRequest)
-		return
-	}
-
-	images, err := crds.discoverer.Images(req.Context())
+	images, err := crds.discoverer.Images(ctx)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to discover images: %v", err), http.StatusInternalServerError)
-		return
+		return fmt.Errorf("failed to discover images: %w", err)
 	}
 
 	response := ListImagesResponse{
 		Images: images,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	encoder := json.NewEncoder(w)
-	err = encoder.Encode(response)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
-		return
-	}
+	return c.JSON(http.StatusOK, response)
 }
 
-func (crds *ContainerRuntimeDiscoveryServer) ListContainers(w http.ResponseWriter, req *http.Request) {
-	if req.URL.Path != "/containers" {
-		http.NotFound(w, req)
-		return
-	}
+func (crds *ContainerRuntimeDiscoveryServer) GetImage(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
 
-	if req.Method != http.MethodGet {
-		http.Error(w, fmt.Sprintf("400 unsupported method %v", req.Method), http.StatusBadRequest)
-		return
-	}
-
-	containers, err := crds.discoverer.Containers(req.Context())
+	image, err := crds.discoverer.Image(ctx, id)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to discover containers: %v", err), http.StatusInternalServerError)
-		return
+		if errors.Is(err, ErrNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("Image not found with ID %v", id))
+		}
+		return fmt.Errorf("failed to discover image %s: %w", id, err)
+	}
+
+	return c.JSON(http.StatusOK, image)
+}
+
+func (crds *ContainerRuntimeDiscoveryServer) ExportImage(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEOctetStream)
+	c.Response().WriteHeader(http.StatusOK)
+
+	return crds.discoverer.ExportImage(ctx, id, c.Response())
+}
+
+func (crds *ContainerRuntimeDiscoveryServer) ExportImageFilesystem(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEOctetStream)
+	c.Response().WriteHeader(http.StatusOK)
+
+	return crds.discoverer.ExportImageFilesystem(ctx, id, c.Response())
+}
+
+func (crds *ContainerRuntimeDiscoveryServer) ListContainers(c echo.Context) error {
+	containers, err := crds.discoverer.Containers(c.Request().Context())
+	if err != nil {
+		return fmt.Errorf("failed to discover containers: %v", err)
 	}
 
 	response := ListContainersResponse{
 		Containers: containers,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	encoder := json.NewEncoder(w)
-	err = encoder.Encode(response)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
-		return
-	}
+	return c.JSON(http.StatusOK, response)
 }

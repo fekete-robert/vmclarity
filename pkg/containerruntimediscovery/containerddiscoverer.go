@@ -17,13 +17,24 @@ package containerruntimediscovery
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"time"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/images/archive"
+	"github.com/containerd/containerd/leases"
+	"github.com/containerd/containerd/pkg/cleanup"
 	criConstants "github.com/containerd/containerd/pkg/cri/constants"
+	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/nerdctl/pkg/imgutil"
 	"github.com/containerd/nerdctl/pkg/labels/k8slabels"
 	"github.com/containers/image/v5/docker/reference"
+	"github.com/containerd/containerd/mount"
+	"github.com/opencontainers/image-spec/identity"
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
@@ -91,6 +102,148 @@ func (cd *ContainerdDiscoverer) Images(ctx context.Context) ([]models.ContainerI
 		result = append(result, image)
 	}
 	return result, nil
+}
+
+func (cd *ContainerdDiscoverer) Image(ctx context.Context, imageID string) (models.ContainerImageInfo, error) {
+	// ContainerD doesn't allow to filter images by config digest, so we
+	// have to walk all the images to find all the images by ID and then
+	// merge them together.
+	images, err := cd.client.ListImages(ctx)
+	if err != nil {
+		return models.ContainerImageInfo{}, fmt.Errorf("failed to list images: %w", err)
+	}
+
+	var result models.ContainerImageInfo
+	var found bool
+	for _, image := range images {
+		configDescriptor, err := image.Config(ctx)
+		if err != nil {
+			return models.ContainerImageInfo{}, fmt.Errorf("failed to load image config descriptor: %w", err)
+		}
+		id := configDescriptor.Digest.String()
+
+		if id != imageID {
+			continue
+		}
+
+		found = true
+
+		cii, err := cd.getContainerImageInfo(ctx, image)
+		if err != nil {
+			return models.ContainerImageInfo{}, fmt.Errorf("unable to convert image %s to container image info: %w", image.Name(), err)
+		}
+
+		result, err = result.Merge(cii)
+		if err != nil {
+			return models.ContainerImageInfo{}, fmt.Errorf("unable to merge image %v with %v: %w", result, cii, err)
+		}
+	}
+	if !found {
+		return models.ContainerImageInfo{}, ErrNotFound
+	}
+
+	return result, nil
+}
+
+func (cd *ContainerdDiscoverer) ExportImage(ctx context.Context, imageID string, output io.Writer) error {
+	images, err := cd.client.ListImages(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list images: %w", err)
+	}
+
+	var i containerd.Image
+	var found bool
+	for _, image := range images {
+		configDescriptor, err := image.Config(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load image config descriptor: %w", err)
+		}
+		id := configDescriptor.Digest.String()
+
+		if id == imageID {
+			i = image
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("no image with ID %s found to export", imageID)
+	}
+
+	return cd.client.Export(
+		ctx,
+		output,
+		archive.WithImage(cd.client.ImageService(), i.Name()),
+		archive.WithPlatform(platforms.All),
+	)
+}
+
+func (cd *ContainerdDiscoverer) ExportImageFilesystem(ctx context.Context, imageID string, output io.Writer) error {
+	images, err := cd.client.ListImages(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list images: %w", err)
+	}
+
+	var i containerd.Image
+	var found bool
+	for _, image := range images {
+		configDescriptor, err := image.Config(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load image config descriptor: %w", err)
+		}
+		id := configDescriptor.Digest.String()
+
+		if id == imageID {
+			i = image
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("no image with ID %s found to export", imageID)
+	}
+
+	diffIDs, err := i.RootFS(ctx)
+	if err != nil {
+		return err
+	}
+
+	ctx, done, err := cd.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(1*time.Hour))
+	if err != nil {
+		return err
+	}
+	defer done(ctx)
+
+	snapshotter := containerd.DefaultSnapshotter
+	snSrv := cd.client.SnapshotService(snapshotter)
+	cSrv := cd.client.ContentStore()
+	compSrv := cd.client.DiffService()
+	snID := identity.ChainID(diffIDs).String()
+	mounts, err := snSrv.View(ctx, fmt.Sprintf("%s-export-view-%s", snID, uniquePart()), snID)
+	if err != nil {
+		return err
+	}
+	defer cleanup.Do(ctx, func(ctx context.Context) {
+		snSrv.Remove(ctx, snID)
+	})
+
+	desc, err := compSrv.Compare(ctx, []mount.Mount{}, mounts)
+	if err != nil {
+		return err
+	}
+
+	readerAt, err := cSrv.ReaderAt(ctx, desc)
+	if err != nil {
+		return err
+	}
+	defer readerAt.Close()
+
+	_, err = io.Copy(output, content.NewReader(readerAt))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (cd *ContainerdDiscoverer) getContainerImageInfo(ctx context.Context, image containerd.Image) (models.ContainerImageInfo, error) {
@@ -198,4 +351,12 @@ func (cd *ContainerdDiscoverer) getContainerInfo(ctx context.Context, container 
 		Labels:        convertTags(labels),
 		ObjectType:    "ContainerInfo",
 	}, nil
+}
+
+func uniquePart() string {
+	t := time.Now()
+	var b [3]byte
+	// Ignore read failures, just decreases uniqueness
+	rand.Read(b[:])
+	return fmt.Sprintf("%d-%s", t.Nanosecond(), base64.URLEncoding.EncodeToString(b[:]))
 }

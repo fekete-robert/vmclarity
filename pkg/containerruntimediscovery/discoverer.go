@@ -19,13 +19,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/shared/log"
 )
 
+var ErrNotFound = errors.New("not found")
+
 type Discoverer interface {
 	Images(ctx context.Context) ([]models.ContainerImageInfo, error)
+	Image(ctx context.Context, imageID string) (models.ContainerImageInfo, error)
+	ExportImage(ctx context.Context, imageID string, output io.Writer) error
+	ExportImageFilesystem(ctx context.Context, imageID string, output io.Writer) error
+
 	Containers(ctx context.Context) ([]models.ContainerInfo, error)
 }
 

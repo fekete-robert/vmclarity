@@ -16,14 +16,18 @@
 package containerruntimediscovery
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	dtypes "github.com/docker/docker/api/types"
+	dtypesContainer "github.com/docker/docker/api/types/container"
 	dclient "github.com/docker/docker/client"
 
 	"github.com/openclarity/vmclarity/api/models"
+	"github.com/openclarity/vmclarity/pkg/shared/log"
 	"github.com/openclarity/vmclarity/pkg/shared/utils"
 )
 
@@ -66,6 +70,14 @@ func (dd *DockerDiscoverer) Images(ctx context.Context) ([]models.ContainerImage
 	return result, nil
 }
 
+func (dd *DockerDiscoverer) Image(ctx context.Context, imageID string) (models.ContainerImageInfo, error) {
+	info, err := dd.getContainerImageInfo(ctx, imageID)
+	if dclient.IsErrNotFound(err) {
+		return info, ErrNotFound
+	}
+	return info, err
+}
+
 func (dd *DockerDiscoverer) getContainerImageInfo(ctx context.Context, imageID string) (models.ContainerImageInfo, error) {
 	image, _, err := dd.client.ImageInspectWithRaw(ctx, imageID)
 	if err != nil {
@@ -82,6 +94,57 @@ func (dd *DockerDiscoverer) getContainerImageInfo(ctx context.Context, imageID s
 		Os:           utils.PointerTo(image.Os),
 		Size:         utils.PointerTo(int(image.Size)),
 	}, nil
+}
+
+func (dd *DockerDiscoverer) ExportImage(ctx context.Context, imageID string, output io.Writer) error {
+	reader, err := dd.client.ImageSave(ctx, []string{imageID})
+	if err != nil {
+		return fmt.Errorf("unable to save image from daemon: %w", err)
+	}
+	defer reader.Close()
+
+	_, err = io.Copy(output, reader)
+	if err != nil {
+		return fmt.Errorf("failed to copy image to output: %w", err)
+	}
+
+	return nil
+}
+
+func (dd *DockerDiscoverer) ExportImageFilesystem(ctx context.Context, imageID string, output io.Writer) error {
+	logger := log.GetLoggerFromContextOrDiscard(ctx)
+
+	// Create an ephemeral container to export asset
+	containerResp, err := dd.client.ContainerCreate(
+		ctx,
+		&dtypesContainer.Config{Image: imageID},
+		nil,
+		nil,
+		nil,
+		"",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create helper container: %w", err)
+	}
+
+	defer func() {
+		err := dd.client.ContainerRemove(ctx, containerResp.ID, dtypes.ContainerRemoveOptions{Force: true})
+		if err != nil {
+			logger.Errorf("failed to remove helper container=%s: %v", containerResp.ID, err)
+		}
+	}()
+
+	contents, err := dd.client.ContainerExport(ctx, containerResp.ID)
+	if err != nil {
+		return fmt.Errorf("failed to export container: %w", err)
+	}
+
+	_, err = io.Copy(gzip.NewWriter(output), contents)
+	if err != nil {
+		return fmt.Errorf("failed to copy image to output: %w", err)
+	}
+
+	return nil
 }
 
 func convertTags(tags map[string]string) *[]models.Tag {
