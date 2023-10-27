@@ -31,7 +31,7 @@ type Discoverer interface {
 	Images(ctx context.Context) ([]models.ContainerImageInfo, error)
 	Image(ctx context.Context, imageID string) (models.ContainerImageInfo, error)
 	ExportImage(ctx context.Context, imageID string, output io.Writer) error
-	ExportImageFilesystem(ctx context.Context, imageID string, output io.Writer) error
+	ExportImageFilesystem(ctx context.Context, imageID string) (io.ReadCloser, func(), error)
 
 	Containers(ctx context.Context) ([]models.ContainerInfo, error)
 }

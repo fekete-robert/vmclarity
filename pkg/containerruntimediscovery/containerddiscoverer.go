@@ -145,43 +145,74 @@ func (cd *ContainerdDiscoverer) Image(ctx context.Context, imageID string) (mode
 	return result, nil
 }
 
+// TODO(sambetts) Support auth config for fetching private images if they are missing
 func (cd *ContainerdDiscoverer) ExportImage(ctx context.Context, imageID string, output io.Writer) error {
-	images, err := cd.client.ListImages(ctx)
+	imageInfo, err := cd.Image(ctx, imageID)
 	if err != nil {
-		return fmt.Errorf("failed to list images: %w", err)
+		return fmt.Errorf("failed to get image info to export: %w", err)
 	}
 
-	var i containerd.Image
-	var found bool
-	for _, image := range images {
-		configDescriptor, err := image.Config(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load image config descriptor: %w", err)
-		}
-		id := configDescriptor.Digest.String()
-
-		if id == imageID {
-			i = image
-			found = true
-			break
-		}
+	if imageInfo.RepoDigests == nil || len(*imageInfo.RepoDigests) == 0 {
+		return fmt.Errorf("image has no known repo digests can not safely fetch it: %w", err)
 	}
-	if !found {
-		return fmt.Errorf("no image with ID %s found to export", imageID)
+
+	ctx, done, err := cd.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(1*time.Hour))
+	if err != nil {
+		return fmt.Errorf("failed to get lease from containerd: %w", err)
+	}
+	defer done(ctx)
+
+	// NOTE(sambetts) When running in Kubernetes containerd can be
+	// configured to garbage collect the un-expanded blobs from the content
+	// store after they are converted to a rootfs snapshot that is used to
+	// boot containers. For this reason we need to re-fetch the image to
+	// ensure that all the required blobs for export are in the content
+	// store.
+	//
+	// TODO(sambetts) Maybe try all the digests in case one has gone missing?
+	ref := (*imageInfo.RepoDigests)[0]
+	img, err := cd.client.Fetch(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("failed to fetch image %s: %w", ref, err)
 	}
 
 	return cd.client.Export(
 		ctx,
 		output,
-		archive.WithImage(cd.client.ImageService(), i.Name()),
+		archive.WithImage(cd.client.ImageService(), img.Name),
 		archive.WithPlatform(platforms.All),
 	)
 }
 
-func (cd *ContainerdDiscoverer) ExportImageFilesystem(ctx context.Context, imageID string, output io.Writer) error {
+type cleanuper struct {
+	cleanups []func()
+	success bool
+}
+
+func (c *cleanuper) add(cleanup func()) {
+	c.cleanups = append(c.cleanups, cleanup)
+}
+
+func (c *cleanuper) ifNotSuccessful() {
+	if !c.success {
+		c.cleanup()
+	}
+}
+
+func (c *cleanuper) cleanup() {
+	for _, cleanup := range c.cleanups {
+		cleanup()
+	}
+	c.cleanups = []func(){}
+}
+
+func (cd *ContainerdDiscoverer) ExportImageFilesystem(ctx context.Context, imageID string) (io.ReadCloser, func(), error) {
+	clean := &cleanuper{}
+	defer clean.ifNotSuccessful()
+
 	images, err := cd.client.ListImages(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list images: %w", err)
+		return nil, clean.cleanup, fmt.Errorf("failed to list images: %w", err)
 	}
 
 	var i containerd.Image
@@ -189,7 +220,7 @@ func (cd *ContainerdDiscoverer) ExportImageFilesystem(ctx context.Context, image
 	for _, image := range images {
 		configDescriptor, err := image.Config(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to load image config descriptor: %w", err)
+			return nil, clean.cleanup, fmt.Errorf("failed to load image config descriptor: %w", err)
 		}
 		id := configDescriptor.Digest.String()
 
@@ -200,17 +231,17 @@ func (cd *ContainerdDiscoverer) ExportImageFilesystem(ctx context.Context, image
 		}
 	}
 	if !found {
-		return fmt.Errorf("no image with ID %s found to export", imageID)
+		return nil, clean.cleanup, fmt.Errorf("no image with ID %s found to export", imageID)
 	}
 
 	diffIDs, err := i.RootFS(ctx)
 	if err != nil {
-		return err
+		return nil, clean.cleanup, fmt.Errorf("failed to get diff IDs from image config: %w", err)
 	}
 
 	ctx, done, err := cd.client.WithLease(ctx, leases.WithRandomID(), leases.WithExpiration(1*time.Hour))
 	if err != nil {
-		return err
+		return nil, clean.cleanup, fmt.Errorf("failed to get lease from containerd: %w", err)
 	}
 	defer done(ctx)
 
@@ -221,29 +252,26 @@ func (cd *ContainerdDiscoverer) ExportImageFilesystem(ctx context.Context, image
 	snID := identity.ChainID(diffIDs).String()
 	mounts, err := snSrv.View(ctx, fmt.Sprintf("%s-export-view-%s", snID, uniquePart()), snID)
 	if err != nil {
-		return err
+		return nil, clean.cleanup, fmt.Errorf("failed to get mounts from containerd: %w", err)
 	}
-	defer cleanup.Do(ctx, func(ctx context.Context) {
-		snSrv.Remove(ctx, snID)
+	clean.add(func() {
+		cleanup.Do(ctx, func(ctx context.Context) {
+			snSrv.Remove(ctx, snID)
+		})
 	})
 
 	desc, err := compSrv.Compare(ctx, []mount.Mount{}, mounts)
 	if err != nil {
-		return err
+		return nil, clean.cleanup, fmt.Errorf("failed to generate content from snapshot: %w", err)
 	}
 
 	readerAt, err := cSrv.ReaderAt(ctx, desc)
 	if err != nil {
-		return err
-	}
-	defer readerAt.Close()
-
-	_, err = io.Copy(output, content.NewReader(readerAt))
-	if err != nil {
-		return err
+		return nil, clean.cleanup, fmt.Errorf("failed to get reader for content: %w", err)
 	}
 
-	return nil
+	clean.success = true
+	return io.NopCloser(content.NewReader(readerAt)), clean.cleanup, nil
 }
 
 func (cd *ContainerdDiscoverer) getContainerImageInfo(ctx context.Context, image containerd.Image) (models.ContainerImageInfo, error) {
@@ -316,6 +344,23 @@ func (cd *ContainerdDiscoverer) Containers(ctx context.Context) ([]models.Contai
 	return result, nil
 }
 
+func (cd *ContainerdDiscoverer) Container(ctx context.Context, containerID string) (models.ContainerInfo, error) {
+	containerSvc := cd.client.ContainerService()
+	container, err := containerSvc.Get(ctx, containerID)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("failed to get container from store: %w", err)
+	}
+
+	return cd.getContainerInfo(ctx, container)
+}
+
+func (cd *ContainerdDiscoverer) ExportContainer(ctx context.Context, containerID string) (io.ReadCloser, func(), error) {
+	return nil, func(){}, fmt.Errorf("Not Implemented")
+}
+
 func (cd *ContainerdDiscoverer) getContainerInfo(ctx context.Context, container containerd.Container) (models.ContainerInfo, error) {
 	id := container.ID()
 
@@ -338,7 +383,13 @@ func (cd *ContainerdDiscoverer) getContainerInfo(ctx context.Context, container 
 		return models.ContainerInfo{}, fmt.Errorf("unable to get image from container %s: %w", id, err)
 	}
 
-	imageInfo, err := cd.getContainerImageInfo(ctx, image)
+	configDescriptor, err := image.Config(ctx)
+	if err != nil {
+		return models.ContainerImageInfo{}, fmt.Errorf("failed to load image config descriptor: %w", err)
+	}
+	imageID := configDescriptor.Digest.String()
+
+	imageInfo, err := cd.Image(ctx, imageID)
 	if err != nil {
 		return models.ContainerInfo{}, fmt.Errorf("unable to convert image %s to container image info: %w", image.Name(), err)
 	}

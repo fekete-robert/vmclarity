@@ -111,7 +111,10 @@ func (dd *DockerDiscoverer) ExportImage(ctx context.Context, imageID string, out
 	return nil
 }
 
-func (dd *DockerDiscoverer) ExportImageFilesystem(ctx context.Context, imageID string, output io.Writer) error {
+func (dd *DockerDiscoverer) ExportImageFilesystem(ctx context.Context, imageID string) (io.ReadCloser, func(), error) {
+	clean := &cleanuper{}
+	defer clean.ifNotSuccessful()
+
 	logger := log.GetLoggerFromContextOrDiscard(ctx)
 
 	// Create an ephemeral container to export asset
@@ -124,27 +127,37 @@ func (dd *DockerDiscoverer) ExportImageFilesystem(ctx context.Context, imageID s
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create helper container: %w", err)
+		return nil, clean.cleanup, fmt.Errorf("failed to create helper container: %w", err)
 	}
 
-	defer func() {
+	clean.add(func() {
 		err := dd.client.ContainerRemove(ctx, containerResp.ID, dtypes.ContainerRemoveOptions{Force: true})
 		if err != nil {
 			logger.Errorf("failed to remove helper container=%s: %v", containerResp.ID, err)
 		}
-	}()
+	})
 
 	contents, err := dd.client.ContainerExport(ctx, containerResp.ID)
 	if err != nil {
-		return fmt.Errorf("failed to export container: %w", err)
+		return nil, clean.cleanup, fmt.Errorf("failed to export container: %w", err)
 	}
 
-	_, err = io.Copy(gzip.NewWriter(output), contents)
-	if err != nil {
-		return fmt.Errorf("failed to copy image to output: %w", err)
-	}
+	// Pipe container export reader through gzip
+	r, w := io.Pipe()
+	go func() {
+		defer w.Close()
 
-	return nil
+		gzipWriter := gzip.NewWriter(w)
+		defer gzipWriter.Close()
+
+		_, err := io.Copy(gzipWriter, contents)
+		if err != nil {
+			logger.Warnf("error piping content through gzip: %v", err)
+		}
+	}()
+
+	clean.success = true
+	return r, clean.cleanup, nil
 }
 
 func convertTags(tags map[string]string) *[]models.Tag {

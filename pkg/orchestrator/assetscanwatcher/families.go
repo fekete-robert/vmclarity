@@ -58,6 +58,7 @@ func withSBOM(config *models.SBOMConfig, opts *ScannerConfig) FamiliesConfigOpti
 				// TODO(sambetts) The user needs to be able to provide this configuration
 				Registry: &kubeclarityConfig.Registry{},
 				Analyzer: &kubeclarityConfig.Analyzer{
+					Scope: "squashed", // TODO(sambetts) This should be a default in the scanner/cli config
 					OutputFormat: "cyclonedx",
 					TrivyConfig: kubeclarityConfig.AnalyzerTrivyConfig{
 						Timeout: int(opts.TrivyScanTimeout / time.Second), // NOTE(chrisgacsal): Timeout is expected to be in seconds.

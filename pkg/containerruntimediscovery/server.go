@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"io"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -121,10 +122,25 @@ func (crds *ContainerRuntimeDiscoveryServer) ExportImageFilesystem(c echo.Contex
 	ctx := c.Request().Context()
 	id := c.Param("id")
 
+	reader, cleanup, err := crds.discoverer.ExportImageFilesystem(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("Image not found with ID %v", id))
+		}
+		return fmt.Errorf("failed to export image %s: %w", id, err)
+	}
+	defer cleanup()
+	defer reader.Close()
+
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEOctetStream)
 	c.Response().WriteHeader(http.StatusOK)
 
-	return crds.discoverer.ExportImageFilesystem(ctx, id, c.Response())
+	_, err = io.Copy(c.Response(), reader)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
 }
 
 func (crds *ContainerRuntimeDiscoveryServer) ListContainers(c echo.Context) error {

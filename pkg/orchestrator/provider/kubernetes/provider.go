@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/openclarity/vmclarity/api/models"
 	"github.com/openclarity/vmclarity/pkg/orchestrator/provider"
@@ -151,13 +152,14 @@ func (p *Provider) RunAssetScan(ctx context.Context, config *provider.ScanJobCon
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				found = true
+				break
 			}
 		}
 		if !found {
 			return fmt.Errorf("unable to find image ID %s in any discoverer", value.ImageID)
 		}
 
-		err := p.runScannerJob(ctx, config, fmt.Sprintf("http://%s/exportimagefilesystem/%s", discovererEndpoint, value.ImageID))
+		err := p.runScannerJob(ctx, config, fmt.Sprintf("http://%s/exportimage/%s", discovererEndpoint, value.ImageID))
 		if err != nil {
 			// TODO(sambetts) Make runScannerJob idempotent and
 			// change this to a normal Errorf.
@@ -172,6 +174,7 @@ func (p *Provider) RunAssetScan(ctx context.Context, config *provider.ScanJobCon
 
 // mountPointPath defines the location in the container where assets will be mounted.
 var mountPointPath = "/mnt/snapshot"
+var archiveLocation = mountPointPath + "/image.tar"
 
 func (p *Provider) generateScanConfig(config *provider.ScanJobConfig) ([]byte, error) {
 	// Add volume mount point to family configuration
@@ -181,7 +184,7 @@ func (p *Provider) generateScanConfig(config *provider.ScanJobConfig) ([]byte, e
 		return nil, fmt.Errorf("failed to unmarshal family scan configuration: %w", err)
 	}
 
-	families.SetMountPointsForFamiliesInput([]string{mountPointPath}, &familiesConfig)
+	families.SetOciArchiveForFamiliesInput([]string{archiveLocation}, &familiesConfig)
 	familiesConfigByte, err := yaml.Marshal(familiesConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal family scan configuration: %w", err)
@@ -228,13 +231,13 @@ func (p *Provider) runScannerJob(ctx context.Context, config *provider.ScanJobCo
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{
 						{
-							Name:    "download and unpack source",
+							Name:    "download-and-unpack-source",
 							Image:   "yauritux/busybox-curl:latest",
 							Command: []string{"/bin/sh", "-c"},
-							Args:    []string{fmt.Sprintf("curl %s | tar -C %s -zxf -", sourceURL, mountPointPath)},
+							Args:    []string{fmt.Sprintf("curl %s -o %s", sourceURL, archiveLocation)},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "assetData",
+									Name:      "asset-data",
 									MountPath: mountPointPath,
 								},
 							},
@@ -245,9 +248,6 @@ func (p *Provider) runScannerJob(ctx context.Context, config *provider.ScanJobCo
 							Name:            jobName,
 							Image:           config.ScannerImage,
 							ImagePullPolicy: corev1.PullAlways,
-							Command: []string{
-								"/app/vmclarity-cli",
-							},
 							Args: []string{
 								"scan",
 								"--config",
@@ -264,7 +264,7 @@ func (p *Provider) runScannerJob(ctx context.Context, config *provider.ScanJobCo
 									MountPath: "/etc/vmclarity",
 								},
 								{
-									Name:      "assetData",
+									Name:      "asset-data",
 									MountPath: mountPointPath,
 								},
 							},
@@ -283,7 +283,7 @@ func (p *Provider) runScannerJob(ctx context.Context, config *provider.ScanJobCo
 							},
 						},
 						{
-							Name: "assetData",
+							Name: "asset-data",
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
@@ -303,6 +303,22 @@ func (p *Provider) runScannerJob(ctx context.Context, config *provider.ScanJobCo
 	return nil
 }
 
-func (p *Provider) RemoveAssetScan(context.Context, *provider.ScanJobConfig) error {
-	return fmt.Errorf("not implemented")
+func (p *Provider) RemoveAssetScan(ctx context.Context, config *provider.ScanJobConfig) error {
+	jobName := fmt.Sprintf("vmclarity-scan-%s", config.AssetScanID)
+
+	// TODO(sambetts) Add a scan namespace to the kubernetes provider
+	// configuration
+	namespace := "vmclarity"
+
+	err := p.clientset.BatchV1().Jobs(namespace).Delete(ctx, jobName, metav1.DeleteOptions{})
+	if err != nil && !k8sErrors.IsNotFound(err) {
+		return fmt.Errorf("unable to delete job: %w", err)
+	}
+
+	err = p.clientset.CoreV1().ConfigMaps(namespace).Delete(ctx, jobName, metav1.DeleteOptions{})
+	if err != nil && !k8sErrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete config map: %w", err)
+	}
+
+	return nil
 }
